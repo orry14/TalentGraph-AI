@@ -110,7 +110,7 @@ export interface SkillGapReport {
   }[];
 }
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://127.0.0.1:5000/api';
 
 export const api = {
   async login(email: string, password: string): Promise<{ user: any; token: string }> {
