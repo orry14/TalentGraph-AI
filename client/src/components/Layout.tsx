@@ -6,7 +6,6 @@ import {
   Briefcase,
   TrendingUp,
   GitMerge,
-  LogOut,
   Sparkles,
   Database,
   FolderGit,
@@ -30,7 +29,7 @@ export const Layout: React.FC<LayoutProps> = ({
   onResetDB,
   resetLoading
 }) => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   const navigation = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
@@ -106,13 +105,6 @@ export const Layout: React.FC<LayoutProps> = ({
                 <p className="text-[10px] text-slate-500 font-medium leading-none mt-0.5">{user?.role}</p>
               </div>
             </div>
-            <button
-              onClick={logout}
-              className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </aside>

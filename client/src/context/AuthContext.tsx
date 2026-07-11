@@ -20,12 +20,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>({ id: 'admin', email: 'admin@workforce.ai', name: 'Admin User', role: 'admin' });
-  const [token, setToken] = useState<string | null>('mock-token');
+  const [user, setUser] = useState<User | null>({ id: '1', email: 'guest@talentgraph.ai', name: 'Guest User', role: 'admin' });
+  const [token, setToken] = useState<string | null>('dummy-token');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Auth bypassed
+    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {

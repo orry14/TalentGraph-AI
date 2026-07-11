@@ -77,9 +77,7 @@ function AppContent() {
     );
   }
 
-  // Authentication is disabled
-
-
+  // Removed Login rendering
   // Active view routing
   const renderContent = () => {
     if (isLoading && !stats) {
@@ -90,26 +88,9 @@ function AppContent() {
       );
     }
 
-    const renderError = () => (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center bg-slate-900/50 rounded-2xl border border-red-900/20 p-8">
-        <div className="w-16 h-16 bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mb-4">
-          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h2 className="text-2xl font-semibold text-slate-200 mb-2">Backend Connection Failed</h2>
-        <p className="text-slate-400 max-w-lg mb-6">
-          The application could not connect to the API server. Data fetching failed because the backend is not accessible.
-        </p>
-        <p className="text-sm text-slate-500">
-          Check your Vercel deployment logs and ensure your Express server is hosted and the API_BASE URL in <code>client/src/utils/api.ts</code> is correct.
-        </p>
-      </div>
-    );
-
     switch (activeTab) {
       case 'dashboard':
-        return stats ? <Dashboard stats={stats} setActiveTab={setActiveTab} /> : renderError();
+        return stats ? <Dashboard stats={stats} setActiveTab={setActiveTab} /> : null;
       case 'employees':
         return (
           <Employees
@@ -125,11 +106,11 @@ function AppContent() {
       case 'recruitment':
         return <Recruitment />;
       case 'gap-analysis':
-        return gapReport ? <GapAnalysis report={gapReport} /> : renderError();
+        return gapReport ? <GapAnalysis report={gapReport} /> : null;
       case 'skill-graph':
         return <SkillGraph employees={employees} projects={projects} />;
       default:
-        return stats ? <Dashboard stats={stats} /> : renderError();
+        return stats ? <Dashboard stats={stats} /> : null;
     }
   };
 
