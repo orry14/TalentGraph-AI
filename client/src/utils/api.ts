@@ -319,7 +319,7 @@ export interface RecruitmentDashboard {
   hiringFunnel: { status: string; count: number }[];
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 import { mockEmployees, mockProjects, mockDashboardStats, mockGapAnalysis } from './mockData';
 

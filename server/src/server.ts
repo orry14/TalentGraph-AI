@@ -1210,7 +1210,11 @@ app.post('/api/search/knowledge-graph', async (req, res) => {
   }
 });
 
-// Start listening
-app.listen(PORT, () => {
-  console.log(`🚀 Workforce Intelligence Platform Server running on http://localhost:${PORT}`);
-});
+// Start listening if not running on Vercel
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Workforce Intelligence Platform Server running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
