@@ -306,7 +306,7 @@ export const Recruitment: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href="http://127.0.0.1:5000/api/recruitment/export.csv"
+                  href="/api/recruitment/export.csv"
                   className="px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 text-[10px] font-bold flex items-center gap-2"
                 >
                   <Download className="w-3.5 h-3.5" />
