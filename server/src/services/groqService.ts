@@ -1,7 +1,7 @@
 import Groq from 'groq-sdk';
 import { db } from '../db/dbClient.js';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || 'missing_key' });
 
 export const GROQ_MODELS = [
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Most capable, best reasoning' },
