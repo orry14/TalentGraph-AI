@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { RoleProvider } from './context/RoleContext';
 import { Layout } from './components/Layout';
 import { ChatBot } from './components/ChatBot';
 import { Dashboard } from './pages/Dashboard';
@@ -7,8 +8,11 @@ import { Employees } from './pages/Employees';
 import { Staffing } from './pages/Staffing';
 import { GapAnalysis } from './pages/GapAnalysis';
 import { SkillGraph } from './pages/SkillGraph';
+import { TalentNetwork } from './pages/TalentNetwork';
 import { Projects } from './pages/Projects';
 import { Recruitment } from './pages/Recruitment';
+import { AuditLogs } from './pages/AuditLogs';
+import { Settings } from './pages/Settings';
 import { api, Employee, Project, DashboardStats, SkillGapReport } from './utils/api';
 import { SkeletonTable } from './components/LoadingSkeleton';
 
@@ -109,6 +113,12 @@ function AppContent() {
         return gapReport ? <GapAnalysis report={gapReport} /> : null;
       case 'skill-graph':
         return <SkillGraph employees={employees} projects={projects} />;
+      case 'talent-network':
+        return <TalentNetwork />;
+      case 'audit-logs':
+        return <AuditLogs />;
+      case 'settings':
+        return <Settings />;
       default:
         return stats ? <Dashboard stats={stats} /> : null;
     }
@@ -133,7 +143,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <RoleProvider>
+        <AppContent />
+      </RoleProvider>
     </AuthProvider>
   );
 }

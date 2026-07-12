@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import Anthropic from '@anthropic-ai/sdk';
 import { Employee, Project } from '../db/seedData.js';
+import { sanitizeForAI } from '../utils/biasGuard.js';
 
 class AIService {
   private anthropic: Anthropic | null = null;
@@ -120,6 +121,7 @@ Return ONLY a valid JSON array of objects matching this structure:
    * 3. Promotion Readiness: Analyze metrics, generate readiness scores
    */
   public async evaluatePromotionReadiness(employee: Employee): Promise<any> {
+    const cleanEmployee = sanitizeForAI(employee) as Employee;
     if (this.isAIEnabled) {
       const systemPrompt = `You are an AI talent evaluation agent. Evaluate the employee's readiness for promotion.
 Return ONLY a valid JSON object matching this structure:
@@ -129,7 +131,7 @@ Return ONLY a valid JSON object matching this structure:
   "areasToImprove": ["string"]
 }`;
       try {
-        const prompt = `Employee Profile:\n${JSON.stringify(employee, null, 2)}`;
+        const prompt = `Employee Profile:\n${JSON.stringify(cleanEmployee, null, 2)}`;
         const resultText = await this.callClaude(prompt, systemPrompt);
         const cleanedJson = resultText.substring(
           resultText.indexOf('{'),
@@ -142,7 +144,7 @@ Return ONLY a valid JSON object matching this structure:
     }
 
     // --- Simulator Mode ---
-    return this.simulatePromotionReadiness(employee);
+    return this.simulatePromotionReadiness(cleanEmployee);
   }
 
   /**

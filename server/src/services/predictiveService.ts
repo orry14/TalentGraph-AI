@@ -53,6 +53,11 @@ export interface PredictiveWorkforceReport {
     impact: 'High' | 'Medium' | 'Low';
     category: 'Retention' | 'Upskilling' | 'Hiring' | 'Staffing';
   }[];
+  benchCostIntelligence?: {
+    currentBenchCost: number;
+    benchCostTrend: ForecastDataPoint[];
+    costByDepartment: { department: string; cost: number }[];
+  };
 }
 
 class PredictiveService {
@@ -267,6 +272,35 @@ class PredictiveService {
       category: 'Upskilling' as const
     });
 
+    // 11. Bench Cost Intelligence
+    let currentBenchCost = 0;
+    const deptCosts: Record<string, number> = {};
+    employees.forEach(e => {
+      // For seed data, e.allocationPercentage is injected if they are seeded, fallback to currentProjects logic
+      const alloc = e.allocationPercentage !== undefined ? e.allocationPercentage : (e.currentProjects.length > 0 ? 100 : 0);
+      const cost = e.cost_rate || 0;
+      const idleCost = (1 - (alloc / 100)) * cost;
+      currentBenchCost += idleCost;
+      
+      deptCosts[e.department] = (deptCosts[e.department] || 0) + idleCost;
+    });
+
+    const costByDepartment = Object.entries(deptCosts)
+      .map(([department, cost]) => ({ department, cost }))
+      .sort((a, b) => b.cost - a.cost);
+
+    const benchCostTrend: ForecastDataPoint[] = [];
+    let bTrend = currentBenchCost;
+    for (let i = 1; i <= 6; i++) {
+      bTrend = bTrend + (Math.random() * 2000 - 1000); 
+      benchCostTrend.push({
+        period: `Month ${i}`,
+        value: parseFloat(Math.max(0, bTrend).toFixed(2)),
+        lowerConfidence: parseFloat(Math.max(0, bTrend - 1500).toFixed(2)),
+        upperConfidence: parseFloat(Math.max(0, bTrend + 1500).toFixed(2))
+      });
+    }
+
     return {
       skillDecay: {
         decayRate: 14.5,
@@ -299,7 +333,12 @@ class PredictiveService {
         timeline: learningRoiTimeline
       },
       managerEffectiveness,
-      recommendations
+      recommendations,
+      benchCostIntelligence: {
+        currentBenchCost,
+        benchCostTrend,
+        costByDepartment
+      }
     };
   }
 }

@@ -32,6 +32,18 @@ export const SuccessionSimulator: React.FC<SuccessionSimulatorProps> = ({ employ
     }
   };
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await api.exportReport('simulation', {
+        action,
+        targetEmployeeId: employee.id
+      }, format);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed');
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div
@@ -50,9 +62,27 @@ export const SuccessionSimulator: React.FC<SuccessionSimulatorProps> = ({ employ
               <p className="text-sm text-slate-400">Target: {employee.name} ({employee.role})</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            ✕
-          </button>
+          <div className="flex items-center gap-3">
+            {result && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="px-2.5 py-1.5 bg-slate-950/80 hover:bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-xs font-bold transition-all"
+                >
+                  Export CSV
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="px-2.5 py-1.5 bg-slate-950/80 hover:bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-xs font-bold transition-all"
+                >
+                  Export PDF
+                </button>
+              </div>
+            )}
+            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors text-lg font-bold ml-2">
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
@@ -182,6 +212,15 @@ export const SuccessionSimulator: React.FC<SuccessionSimulatorProps> = ({ employ
                             </span>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    
+                    {result.financialImpact && (
+                      <div className="mt-4 pt-4 border-t border-slate-700">
+                        <h4 className="text-xs font-bold text-emerald-400 uppercase mb-2 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> Financial Impact</h4>
+                        <p className="text-xs text-slate-300 bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-lg leading-relaxed">
+                          {result.financialImpact}
+                        </p>
                       </div>
                     )}
                   </div>

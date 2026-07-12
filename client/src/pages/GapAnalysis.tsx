@@ -1,6 +1,6 @@
 import React from 'react';
 import { GlassCard } from '../components/GlassCard';
-import { SkillGapReport } from '../utils/api';
+import { SkillGapReport, api } from '../utils/api';
 import {
   TrendingUp,
   AlertOctagon,
@@ -16,6 +16,15 @@ interface GapAnalysisProps {
 }
 
 export const GapAnalysis: React.FC<GapAnalysisProps> = ({ report }) => {
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await api.exportReport('gap-analysis', {}, format);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed');
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Top Warning Banner if any critical gaps exist */}
@@ -39,9 +48,25 @@ export const GapAnalysis: React.FC<GapAnalysisProps> = ({ report }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Target comparison table list */}
         <GlassCard className="lg:col-span-7 space-y-5">
-          <div>
-            <h4 className="font-outfit font-bold text-base text-slate-200 mb-1">Target Competencies vs Current Levels</h4>
-            <p className="text-xs text-slate-500">Comparing current workforce averages against industry-standard future roadmap targets</p>
+          <div className="flex justify-between items-center mb-1">
+            <div>
+              <h4 className="font-outfit font-bold text-base text-slate-200">Target Competencies vs Current Levels</h4>
+              <p className="text-xs text-slate-500">Comparing current workforce averages against industry-standard future roadmap targets</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => handleExport('csv')}
+                className="px-3 py-1.5 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-xs font-bold transition-all"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={() => handleExport('pdf')}
+                className="px-3 py-1.5 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-xs font-bold transition-all"
+              >
+                Export PDF
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">

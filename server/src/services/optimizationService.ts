@@ -34,6 +34,7 @@ export interface OptimizationResult {
   }[];
   hiringRequired: string[]; // List of skills completely missing and requiring hires
   reasoning: string;
+  projectedMargin?: number;
 }
 
 class OptimizationService {
@@ -68,16 +69,19 @@ class OptimizationService {
 
     // Calculate score details for ALL candidates
     const candidates = employees.map(employee => {
-      // 1. Skill Match Score (0 - 100)
-      const empSkills = new Map(employee.technicalSkills.map(s => [s.name.toLowerCase(), s.proficiency]));
       let matchCount = 0;
       let proficiencySum = 0;
       const missingSkills: string[] = [];
 
       requiredSkills.forEach(reqSkill => {
-        const prof = empSkills.get(reqSkill.toLowerCase());
-        if (prof !== undefined) {
+        const matchingSkill = employee.technicalSkills.find(s => s.name.toLowerCase() === reqSkill.toLowerCase());
+        if (matchingSkill !== undefined) {
           matchCount++;
+          let prof = matchingSkill.proficiency;
+          // Apply a 1.25x multiplier weight for GitHub verified skills (cap at 5)
+          if (matchingSkill.source === 'github_verified') {
+            prof = Math.min(5, prof * 1.25);
+          }
           proficiencySum += prof;
         } else {
           missingSkills.push(reqSkill);
@@ -202,6 +206,13 @@ class OptimizationService {
     const avgRiskScore = Math.round(recommendedTeam.reduce((sum, c) => sum + c.scores.deliveryRisk, 0) / Math.max(1, recommendedTeam.length));
     const overallScore = Math.round(recommendedTeam.reduce((sum, c) => sum + c.overallFitScore, 0) / Math.max(1, recommendedTeam.length));
 
+    // Calculate Projected Margin (Billing - Cost)
+    const projectedMargin = recommendedTeam.reduce((sum, c) => {
+      const billing = c.employee.billing_rate || 0;
+      const cost = c.employee.cost_rate || 0;
+      return sum + (billing - cost);
+    }, 0);
+
     let reasoning = `Mathematically optimized team built via multi-objective integer programming parameters. The primary candidates cover ${100 - Math.round((hiringRequired.length / Math.max(1, requiredSkills.length)) * 100)}% of required skills with an average skill fit index of ${avgSkillFit}/100. Delivery risk is mitigated (average score of ${avgRiskScore}/100) by prioritizing highly experienced engineers. `;
     if (hiringRequired.length > 0) {
       reasoning += `A strategic talent deficit of ${hiringRequired.length} skill(s) (${hiringRequired.join(', ')}) exists, requiring external hiring or intensive upskilling paths.`;
@@ -216,7 +227,8 @@ class OptimizationService {
       backupTeam,
       alternativeTeam,
       hiringRequired,
-      reasoning
+      reasoning,
+      projectedMargin
     };
   }
 }

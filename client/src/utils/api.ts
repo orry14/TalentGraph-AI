@@ -1,6 +1,7 @@
 export interface Skill {
   name: string;
   proficiency: number;
+  source?: 'self_reported' | 'github_verified' | 'admin_assigned';
 }
 
 export interface Employee {
@@ -26,6 +27,15 @@ export interface Employee {
   clients?: string[];
   pastExperience?: string[];
   learningHistory?: string[];
+  
+  // Git Extensions
+  github_username?: string;
+  gitlab_username?: string;
+  
+  // Financial & Cost Intelligence
+  billing_rate?: number;
+  cost_rate?: number;
+  allocationPercentage?: number;
 }
 
 export interface Project {
@@ -184,6 +194,7 @@ export interface CapabilityRisk {
   recommendedAction: string;
   alternativeCandidates: string[];
   flightRiskScore: number;
+  isGitVerified?: boolean;
 }
 
 export interface SimulationResult {
@@ -199,6 +210,7 @@ export interface SimulationResult {
   }[];
   deltaCapability: number;
   missingSkills: string[];
+  financialImpact?: string;
 }
 
 export interface ResolutionOption {
@@ -317,6 +329,28 @@ export interface RecruitmentDashboard {
   topColleges: { name: string; count: number }[];
   skillDistribution: { name: string; count: number }[];
   hiringFunnel: { status: string; count: number }[];
+}
+
+export interface AuditLog {
+  id: string;
+  actor_user_id: string;
+  actor_role: string;
+  action: string;
+  target_type: string;
+  target_id?: string;
+  metadata?: any;
+  created_at: string;
+}
+
+export interface ScheduledReport {
+  id: string;
+  user_id: string;
+  report_type: string;
+  filters: any;
+  frequency: 'weekly' | 'monthly';
+  recipient_emails: string[];
+  next_run_at: string;
+  created_at?: string;
 }
 
 const API_BASE = '/api';
@@ -720,5 +754,144 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to register project activity');
     return res.json();
+  },
+
+  // --- Audit Logs ---
+  async getAuditLogs(params?: {
+    page?: number;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+    actor?: string;
+    action?: string;
+    target?: string;
+  }): Promise<{ total: number; page: number; limit: number; logs: AuditLog[] }> {
+    const query = new URLSearchParams();
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.startDate) query.append('startDate', params.startDate);
+    if (params?.endDate) query.append('endDate', params.endDate);
+    if (params?.actor) query.append('actor', params.actor);
+    if (params?.action) query.append('action', params.action);
+    if (params?.target) query.append('target', params.target);
+
+    const res = await fetch(`${API_BASE}/audit-logs?${query.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch audit logs');
+    return res.json();
+  },
+
+  // --- Export and Scheduled Reports ---
+  async exportReport(reportType: string, filters: any, format: 'csv' | 'pdf'): Promise<void> {
+    const res = await fetch(`${API_BASE}/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ reportType, filters, format })
+    });
+    if (!res.ok) throw new Error('Failed to export report');
+    
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${reportType}_export_${Date.now()}.${format === 'csv' ? 'csv' : 'pdf'}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async getScheduledReports(): Promise<ScheduledReport[]> {
+    const res = await fetch(`${API_BASE}/scheduled-reports`);
+    if (!res.ok) throw new Error('Failed to fetch scheduled reports');
+    return res.json();
+  },
+
+  async createScheduledReport(report: Partial<ScheduledReport>): Promise<ScheduledReport> {
+    const res = await fetch(`${API_BASE}/scheduled-reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(report)
+    });
+    if (!res.ok) throw new Error('Failed to create scheduled report');
+    return res.json();
+  },
+
+  async deleteScheduledReport(id: string): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/scheduled-reports/${id}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error('Failed to delete scheduled report');
+    const data = await res.json();
+    return data.success;
+  },
+
+  async connectGit(employeeId: string, platform: 'github' | 'gitlab', username: string): Promise<Employee> {
+    const res = await fetch(`${API_BASE}/employees/${employeeId}/connect-git`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ platform, username })
+    });
+    if (!res.ok) throw new Error(`Failed to connect ${platform}`);
+    return res.json();
+  },
+
+  async getOrgRepos(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/git-org/repos`);
+    if (!res.ok) throw new Error('Failed to fetch org repositories');
+    return res.json();
+  },
+
+  async analyzeOrgRepo(repoName: string, primarySkill: string, repoPath?: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/git-org/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ repoName, primarySkill, repoPath })
+    });
+    if (!res.ok) throw new Error('Failed to analyze repository');
+    return res.json();
+  },
+
+  // ── Knowledge Graph APIs ──────────────────────────────────────
+
+  async getGraphSPOFs(threshold?: number): Promise<{ spofs: any[]; isLive: boolean }> {
+    const params = threshold ? `?threshold=${threshold}` : '';
+    const res = await fetch(`${API_BASE}/graph/spof${params}`);
+    if (!res.ok) throw new Error('Failed to fetch SPOF graph data');
+    return res.json();
+  },
+
+  async getTalentNetworkGraph(filters?: { department?: string; minProficiency?: number }): Promise<{ nodes: any[]; edges: any[]; isLive: boolean }> {
+    const params = new URLSearchParams();
+    if (filters?.department) params.set('department', filters.department);
+    if (filters?.minProficiency) params.set('minProficiency', String(filters.minProficiency));
+    const query = params.toString() ? `?${params}` : '';
+    const res = await fetch(`${API_BASE}/graph/talent-network${query}`);
+    if (!res.ok) throw new Error('Failed to fetch talent network graph');
+    return res.json();
+  },
+
+  async getPathToCoverage(skillName: string): Promise<{ paths: any[]; isLive: boolean }> {
+    const res = await fetch(`${API_BASE}/graph/path-to-coverage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skillName })
+    });
+    if (!res.ok) throw new Error('Failed to get path to coverage');
+    return res.json();
+  },
+
+  async triggerGraphSync(): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/graph/sync`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to trigger graph sync');
+    return res.json();
   }
 };
+

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GlassCard } from './GlassCard';
 import { api, CapabilityRisk } from '../utils/api';
-import { AlertTriangle, TrendingDown, UserX } from 'lucide-react';
+import { AlertTriangle, TrendingDown, UserX, Github, BadgeCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const CapabilityRiskWidget: React.FC = () => {
@@ -76,8 +76,20 @@ export const CapabilityRiskWidget: React.FC = () => {
                         {risk.employee.name.charAt(0)}
                       </div>
                       <div>
-                        <h5 className="text-sm font-bold text-slate-200">{risk.employee.name}</h5>
-                        <p className="text-xs text-slate-400">{risk.skill} Expert</p>
+                        <h5 className="text-sm font-bold text-slate-200 flex items-center gap-1.5">
+                          {risk.employee.name}
+                          {risk.isGitVerified && (
+                            <span className="inline-flex text-purple-400" title="Verified by Git log analysis (code-maat)">
+                              <Github className="w-3.5 h-3.5 animate-pulse" />
+                            </span>
+                          )}
+                        </h5>
+                        <p className="text-xs text-slate-400 flex items-center gap-1">
+                          {risk.skill} Expert
+                          {risk.isGitVerified && (
+                            <span className="text-[10px] bg-purple-500/15 text-purple-300 px-1 rounded font-semibold border border-purple-500/20">git-verified</span>
+                          )}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -108,7 +120,14 @@ export const CapabilityRiskWidget: React.FC = () => {
             className="absolute inset-0 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-2xl p-5 z-10 flex flex-col"
           >
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-bold text-white">Risk Profile: {selectedRisk.employee.name}</h3>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                Risk Profile: {selectedRisk.employee.name}
+                {selectedRisk.isGitVerified && (
+                  <span className="inline-flex items-center gap-1 text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full font-bold">
+                    <Github className="w-3 h-3" /> git-verified
+                  </span>
+                )}
+              </h3>
               <button
                 onClick={() => setSelectedRisk(null)}
                 className="text-slate-400 hover:text-white"

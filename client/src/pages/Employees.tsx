@@ -3,6 +3,7 @@ import { GlassCard } from '../components/GlassCard';
 import { SkeletonCard, SkeletonList } from '../components/LoadingSkeleton';
 import { SuccessionSimulator } from '../components/SuccessionSimulator';
 import { SemanticSearch } from '../components/SemanticSearch';
+import { GitConnectModal } from '../components/GitConnectModal';
 import { Employee, api, LearningRecommendation, PromotionEvaluation } from '../utils/api';
 import {
   Search,
@@ -17,7 +18,10 @@ import {
   ChevronRight,
   RefreshCw,
   Plus,
-  FileText
+  FileText,
+  Github,
+  Gitlab,
+  BadgeCheck
 } from 'lucide-react';
 
 interface EmployeesProps {
@@ -43,6 +47,23 @@ export const Employees: React.FC<EmployeesProps> = ({
   const [isUpdatingPromotion, setIsUpdatingPromotion] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showSimulator, setShowSimulator] = useState(false);
+  const [gitConnectPlatform, setGitConnectPlatform] = useState<'github' | 'gitlab' | null>(null);
+
+  const handleOpenGitConnect = (platform: 'github' | 'gitlab') => {
+    setGitConnectPlatform(platform);
+  };
+
+  const handleConnectGit = async (username: string) => {
+    if (!selectedEmployee) return;
+    try {
+      const updatedEmp = await api.connectGit(selectedEmployee.id, gitConnectPlatform!, username);
+      setEmployees(prev => prev.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+      setSelectedEmployee(updatedEmp);
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  };
 
   // Set initial selected employee
   useEffect(() => {
@@ -149,13 +170,38 @@ export const Employees: React.FC<EmployeesProps> = ({
 
   const departments = ['All', 'Engineering', 'Data Science', 'Product', 'Design'];
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await api.exportReport('employees', { searchQuery, selectedDept }, format);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed');
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-140px)] overflow-hidden">
       {/* Left panel: Employee list & upload */}
       <div className="lg:col-span-4 flex flex-col h-full space-y-6 overflow-hidden">
         {/* Resume Upload Box */}
         <GlassCard className="p-4 shrink-0">
-          <h4 className="font-outfit font-bold text-sm text-slate-200 mb-2">Resume Intelligence</h4>
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-outfit font-bold text-sm text-slate-200">Resume Intelligence</h4>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => handleExport('csv')}
+                className="px-2 py-1 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-lg text-[9px] font-bold transition-all"
+              >
+                CSV
+              </button>
+              <button
+                onClick={() => handleExport('pdf')}
+                className="px-2 py-1 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-lg text-[9px] font-bold transition-all"
+              >
+                PDF
+              </button>
+            </div>
+          </div>
           <p className="text-[10px] text-slate-500 mb-3">Upload resumes to parse structured JSON and generate candidate profiles automatically</p>
 
           <label
@@ -284,6 +330,35 @@ export const Employees: React.FC<EmployeesProps> = ({
                     </div>
                     <p className="text-xs text-slate-400 mt-1 font-semibold">{selectedEmployee.role}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">{selectedEmployee.email}</p>
+                    <div className="flex gap-2 mt-2">
+                      {selectedEmployee.github_username ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/10 px-2 py-0.5 rounded font-medium">
+                          <Github className="w-3 h-3" /> @{selectedEmployee.github_username}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenGitConnect('github')}
+                          className="inline-flex items-center gap-1 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 px-2 py-0.5 rounded font-bold transition-all"
+                        >
+                          <Github className="w-3 h-3" /> Connect GitHub
+                        </button>
+                      )}
+
+                      {selectedEmployee.gitlab_username ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/10 px-2 py-0.5 rounded font-medium">
+                          <Gitlab className="w-3 h-3" /> @{selectedEmployee.gitlab_username}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenGitConnect('gitlab')}
+                          className="inline-flex items-center gap-1 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 px-2 py-0.5 rounded font-bold transition-all"
+                        >
+                          <Gitlab className="w-3 h-3" /> Connect GitLab
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -337,7 +412,14 @@ export const Employees: React.FC<EmployeesProps> = ({
                   {selectedEmployee.technicalSkills.map((skill, index) => (
                     <div key={index} className="space-y-1.5">
                       <div className="flex justify-between text-xs font-medium">
-                        <span className="text-slate-300">{skill.name}</span>
+                        <span className="text-slate-300 flex items-center gap-1.5">
+                          {skill.name}
+                          {skill.source === 'github_verified' && (
+                            <span className="inline-flex items-center text-emerald-400 animate-pulse" title="GitHub Verified Skill">
+                              <BadgeCheck className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                        </span>
                         <span className="text-blue-400 font-bold">{skill.proficiency} / 5</span>
                       </div>
                       <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/40">
@@ -577,6 +659,14 @@ export const Employees: React.FC<EmployeesProps> = ({
           </div>
         )}
       </div>
+
+      {gitConnectPlatform && (
+        <GitConnectModal
+          platform={gitConnectPlatform}
+          onConnect={handleConnectGit}
+          onClose={() => setGitConnectPlatform(null)}
+        />
+      )}
     </div>
   );
 };

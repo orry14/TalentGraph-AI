@@ -9,8 +9,14 @@ import {
   Sparkles,
   Database,
   FolderGit,
-  UserSearch
+  UserSearch,
+  ShieldAlert,
+  Settings as SettingsIcon,
+  LogOut,
+  Network
 } from 'lucide-react';
+import { useRole, AppRole } from '../context/RoleContext';
+import { RequireRole } from './RequireRole';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -30,15 +36,18 @@ export const Layout: React.FC<LayoutProps> = ({
   resetLoading
 }) => {
   const { user } = useAuth();
+  const { role, setRole } = useRole();
 
   const navigation = [
-    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
-    { id: 'employees', name: 'Employee Workspace', icon: Users },
-    { id: 'recruitment', name: 'Recruitment', icon: UserSearch },
-    { id: 'projects', name: 'Projects', icon: FolderGit },
-    { id: 'staffing', name: 'Project Staffing Engine', icon: Briefcase },
-    { id: 'gap-analysis', name: 'Skill Gap Analysis', icon: TrendingUp },
-    { id: 'skill-graph', name: 'AI Skill Graph', icon: GitMerge },
+    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] as AppRole[] },
+    { id: 'employees', name: 'Employee Workspace', icon: Users, roles: ['admin', 'manager', 'employee'] as AppRole[] },
+    { id: 'recruitment', name: 'Recruitment', icon: UserSearch, roles: ['admin', 'manager'] as AppRole[] },
+    { id: 'projects', name: 'Projects', icon: FolderGit, roles: ['admin', 'manager'] as AppRole[] },
+    { id: 'staffing', name: 'Project Staffing Engine', icon: Briefcase, roles: ['admin', 'manager'] as AppRole[] },
+    { id: 'gap-analysis', name: 'Skill Gap Analysis', icon: TrendingUp, roles: ['admin', 'manager'] as AppRole[] },
+    { id: 'talent-network', name: 'Talent Network', icon: Network, roles: ['admin', 'manager'] as AppRole[] },
+    { id: 'audit-logs', name: 'Audit Logs', icon: ShieldAlert, roles: ['admin'] as AppRole[] },
+    { id: 'settings', name: 'Settings', icon: SettingsIcon, roles: ['admin', 'manager'] as AppRole[] },
   ];
 
   return (
@@ -65,46 +74,64 @@ export const Layout: React.FC<LayoutProps> = ({
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
-                  isActive
-                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.05)]'
-                    : 'text-slate-400 hover:bg-slate-900/50 hover:text-slate-200 border border-transparent'
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-400' : 'text-slate-400'}`} />
-                <span>{item.name}</span>
-              </button>
+              <RequireRole key={item.id} roles={item.roles}>
+                <button
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
+                    isActive
+                      ? 'bg-blue-600/15 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.05)]'
+                      : 'text-slate-400 hover:bg-slate-900/50 hover:text-slate-200 border border-transparent'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-400' : 'text-slate-400'}`} />
+                  <span>{item.name}</span>
+                </button>
+              </RequireRole>
             );
           })}
         </nav>
 
         {/* Database reset helper */}
-        <div className="px-6 py-3 border-t border-slate-900/60">
-          <button
-            onClick={onResetDB}
-            disabled={resetLoading}
-            className="w-full flex items-center justify-center space-x-2 text-xs py-2 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-300 border border-slate-800/80 rounded-lg transition-all duration-200 disabled:opacity-50"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>{resetLoading ? 'Resetting...' : 'Reset Seed Database'}</span>
-          </button>
-        </div>
+        <RequireRole roles={['admin']}>
+          <div className="px-6 py-3 border-t border-slate-900/60">
+            <button
+              onClick={onResetDB}
+              disabled={resetLoading}
+              className="w-full flex items-center justify-center space-x-2 text-xs py-2 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-300 border border-slate-800/80 rounded-lg transition-all duration-200 disabled:opacity-50"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>{resetLoading ? 'Resetting...' : 'Reset Seed Database'}</span>
+            </button>
+          </div>
+        </RequireRole>
 
         {/* Footer profile info */}
         <div className="p-4 border-t border-slate-900/60 bg-slate-950/40">
-          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/30 border border-slate-900/50">
+          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/30 border border-slate-900/50 mb-3">
             <div className="flex items-center space-x-2.5">
               <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-white text-sm uppercase shadow-inner">
-                {user?.name.slice(0, 2)}
+                {user?.name.slice(0, 2) || 'US'}
               </div>
               <div className="text-left">
-                <p className="text-xs font-semibold text-slate-200 leading-tight">{user?.name}</p>
-                <p className="text-[10px] text-slate-500 font-medium leading-none mt-0.5">{user?.role}</p>
+                <p className="text-xs font-semibold text-slate-200 leading-tight">{user?.name || 'Mock User'}</p>
+                <div className="flex items-center space-x-1 mt-1">
+                  <ShieldAlert className="w-3 h-3 text-emerald-400" />
+                  <p className="text-[10px] text-emerald-400 font-medium leading-none uppercase">{role}</p>
+                </div>
               </div>
             </div>
+          </div>
+          <div className="px-2 pb-1">
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Mock Role (Ideation)</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as AppRole)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 py-1.5 px-2 focus:outline-none focus:border-blue-500"
+            >
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="employee">Employee</option>
+            </select>
           </div>
         </div>
       </aside>

@@ -1,4 +1,5 @@
 import express from 'express';
+// Trigger reload comment
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -19,6 +20,15 @@ import type { GroqModelId, ChatMessage } from './services/groqService.js';
 import { employeeFromParsedResume, extractZipResumeFiles, processResumeFile } from './services/resumeProcessor.js';
 import { analyzeCandidateForDrive, createDefaultDrive, generateInterviewQuestions } from './services/recruitmentService.js';
 import type { HiringDrive, RecruitmentCandidate } from './services/recruitmentService.js';
+import { requireRole } from './middleware/rbac.js';
+import { logAudit } from './utils/auditLogger.js';
+import { initScheduler } from './services/scheduler.js';
+import { generateCSV, generatePDF, fetchExportData } from './utils/exporter.js';
+import { fetchGitHubMetrics, fetchGitLabMetrics, mapGitMetricsToSkills } from './utils/githubService.js';
+import { analyzeRepository, getOrgRepositories } from './utils/codeMaat.js';
+import { initNeo4j, isNeo4jEnabled } from './db/neo4jClient.js';
+import { syncAllToGraph } from './services/graphSyncService.js';
+import { findSPOFs, getTalentNetworkGraph, findPathToCoverage } from './services/graphQueryService.js';
 
 // Configure dotenv
 dotenv.config();
@@ -53,7 +63,7 @@ const upload = multer({
 /**
  * Reset Database
  */
-app.post('/api/reset', async (req, res) => {
+app.post('/api/reset', requireRole('admin'), async (req, res) => {
   try {
     await db.resetDatabase();
     res.status(200).json({ message: 'Database reset to initial seed data successfully.' });
@@ -105,9 +115,18 @@ app.post('/api/auth/login', async (req, res) => {
 /**
  * Get all employees
  */
-app.get('/api/employees', async (req, res) => {
+app.get('/api/employees', requireRole('admin', 'manager'), async (req, res) => {
   try {
-    const employees = await db.getEmployees();
+    let employees = await db.getEmployees();
+    const userRole = (req as any).user.role;
+    const userId = (req as any).user.id;
+    if (userRole === 'manager' && userId) {
+      // Mock hierarchy: Manager sees employees in their department
+      const me = employees.find(e => e.id === userId);
+      if (me) {
+        employees = employees.filter(e => e.department === me.department);
+      }
+    }
     res.status(200).json(employees);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -127,10 +146,48 @@ app.get('/api/projects', async (req, res) => {
 });
 
 /**
+ * Get audit logs (Admin only)
+ */
+app.get('/api/audit-logs', requireRole('admin'), async (req, res) => {
+  try {
+    const filters = {
+      dateRange: req.query.startDate && req.query.endDate 
+        ? [req.query.startDate as string, req.query.endDate as string] as [string, string]
+        : undefined,
+      actor: req.query.actor as string,
+      action: req.query.action as string,
+      target: req.query.target as string
+    };
+    const logs = await db.getAuditLogs(filters);
+    
+    // Simple pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const startIndex = (page - 1) * limit;
+    const paginatedLogs = logs.slice(startIndex, startIndex + limit);
+
+    res.status(200).json({
+      total: logs.length,
+      page,
+      limit,
+      logs: paginatedLogs
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Get individual employee with their associated AI recommendations & evaluations
  */
-app.get('/api/employees/:id', async (req, res) => {
+app.get('/api/employees/:id', requireRole('admin', 'manager', 'employee'), async (req, res) => {
   try {
+    const userRole = (req as any).user.role;
+    const userId = (req as any).user.id;
+    if (userRole === 'employee' && userId !== req.params.id) {
+      return res.status(403).json({ error: 'Employees can only access their own profile.' });
+    }
+    
     const employee = await db.getEmployeeById(req.params.id);
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
@@ -148,6 +205,14 @@ app.get('/api/employees/:id', async (req, res) => {
       promotionEval = await aiService.evaluatePromotionReadiness(employee);
       await db.savePromotionEvaluation(employee.id, promotionEval);
     }
+
+    logAudit({
+      actorId: userId || (req.headers['x-mock-user-id'] as string),
+      actorRole: userRole || (req.headers['x-mock-role'] as string),
+      action: 'view_promotion_readiness',
+      targetType: 'employee',
+      targetId: employee.id
+    });
 
     res.status(200).json({
       ...employee,
@@ -211,6 +276,16 @@ app.post('/api/employees/upload-resume', upload.single('resume'), async (req, re
     const parsedResume = await processResumeFile(firstResume);
     const newEmployee = employeeFromParsedResume(parsedResume);
     await db.saveEmployee(newEmployee);
+    
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'upload_resume',
+      targetType: 'employee',
+      targetId: newEmployee.id,
+      metadata: { fileName: firstResume.originalname }
+    });
+
     res.status(201).json({ ...newEmployee, parsedResume });
   } catch (err: any) {
     console.error('Error in upload-resume:', err);
@@ -235,6 +310,15 @@ app.post('/api/employees/upload-resumes', upload.array('resumes', 150), async (r
         failures.push({ fileName: file.originalname, error: err.message });
       }
     }
+
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'upload_resumes_batch',
+      targetType: 'employee',
+      metadata: { successCount: employees.length, failureCount: failures.length }
+    });
+
     res.status(201).json({ employees, failures });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to process resumes: ' + err.message });
@@ -525,6 +609,14 @@ app.get('/api/analytics/capability-risks', async (req, res) => {
   try {
     const employees = await db.getEmployees();
     const risks = riskService.calculateCapabilityRisks(employees);
+
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'view_capability_risks',
+      targetType: 'analytics'
+    });
+
     res.status(200).json(risks);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -650,6 +742,16 @@ app.post('/api/projects/:id/members', async (req, res) => {
     member.projectId = req.params.id;
     if (!member.id) member.id = `mem-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const saved = await db.saveProjectMember(member);
+
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'add_project_member',
+      targetType: 'project',
+      targetId: member.projectId,
+      metadata: { memberId: saved.id, employeeId: saved.employeeId, projectRole: saved.role }
+    });
+
     res.status(200).json(saved);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -659,6 +761,16 @@ app.post('/api/projects/:id/members', async (req, res) => {
 app.delete('/api/projects/:id/members/:memberId', async (req, res) => {
   try {
     const deleted = await db.deleteProjectMember(req.params.memberId);
+    
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'remove_project_member',
+      targetType: 'project',
+      targetId: req.params.id,
+      metadata: { memberId: req.params.memberId, success: deleted }
+    });
+
     res.status(200).json({ success: deleted });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -806,6 +918,15 @@ app.post('/api/simulation/run', async (req, res) => {
     const projects = await db.getProjects();
     
     const result = simulationEngine.runSimulation(action, targetEmployeeId, employees, projects, newRole, newDepartment);
+    
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'run_simulation',
+      targetType: 'simulation',
+      metadata: { action_type: action, targetEmployeeId, newRole, newDepartment }
+    });
+
     res.status(200).json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -882,6 +1003,126 @@ app.get('/api/gap-analysis', async (req, res) => {
     const employees = await db.getEmployees();
     const gapReport = analytics.runGapAnalysis(employees);
     res.status(200).json(gapReport);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Generic Report Export Endpoint (CSV/PDF)
+ */
+app.post('/api/export', requireRole('admin', 'manager', 'employee'), async (req, res) => {
+  try {
+    const { reportType, filters, format } = req.body;
+    const user = (req as any).user || {
+      id: req.headers['x-mock-user-id'] as string,
+      role: req.headers['x-mock-role'] as string
+    };
+
+    if (user.role === 'employee' && reportType !== 'employees') {
+      return res.status(403).json({ error: 'Employees can only export their own directory details.' });
+    }
+
+    const { title, rows } = await fetchExportData(reportType, filters, user);
+    
+    logAudit({
+      actorId: user.id || 'system',
+      actorRole: user.role || 'system',
+      action: 'export_report',
+      targetType: 'report',
+      targetId: reportType,
+      metadata: { format, filters }
+    });
+
+    if (format === 'pdf') {
+      const creatorInfo = `${user.id || 'system'} (${user.role || 'system'})`;
+      const pdfBuffer = await generatePDF(title, creatorInfo, rows);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportType}_export.pdf"`);
+      return res.send(pdfBuffer);
+    } else {
+      const csvContent = generateCSV(rows);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${reportType}_export.csv"`);
+      return res.send(csvContent);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Scheduled Reports APIs
+ */
+app.get('/api/scheduled-reports', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const user = (req as any).user || {
+      id: req.headers['x-mock-user-id'] as string,
+      role: req.headers['x-mock-role'] as string
+    };
+    const reports = await db.getScheduledReports(user.id);
+    res.status(200).json(reports);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/scheduled-reports', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const user = (req as any).user || {
+      id: req.headers['x-mock-user-id'] as string,
+      role: req.headers['x-mock-role'] as string
+    };
+    const { report_type, filters, frequency, recipient_emails } = req.body;
+    
+    const nextRun = new Date();
+    if (frequency === 'weekly') {
+      nextRun.setDate(nextRun.getDate() + 7);
+    } else {
+      nextRun.setDate(nextRun.getDate() + 30);
+    }
+
+    const saved = await db.saveScheduledReport({
+      user_id: user.id || 'system',
+      report_type,
+      filters: filters || {},
+      frequency,
+      recipient_emails: Array.isArray(recipient_emails) ? recipient_emails : [recipient_emails],
+      next_run_at: nextRun.toISOString()
+    });
+
+    logAudit({
+      actorId: user.id || 'system',
+      actorRole: user.role || 'system',
+      action: 'create_scheduled_report',
+      targetType: 'scheduled_report',
+      targetId: saved.id
+    });
+
+    res.status(201).json(saved);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/scheduled-reports/:id', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const user = (req as any).user || {
+      id: req.headers['x-mock-user-id'] as string,
+      role: req.headers['x-mock-role'] as string
+    };
+    const deleted = await db.deleteScheduledReport(req.params.id);
+    
+    logAudit({
+      actorId: user.id || 'system',
+      actorRole: user.role || 'system',
+      action: 'delete_scheduled_report',
+      targetType: 'scheduled_report',
+      targetId: req.params.id,
+      metadata: { success: deleted }
+    });
+
+    res.status(200).json({ success: deleted });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1210,11 +1451,204 @@ app.post('/api/search/knowledge-graph', async (req, res) => {
   }
 });
 
+/**
+ * Connect Git account (GitHub or GitLab) for an employee
+ */
+app.post('/api/employees/:id/connect-git', async (req, res) => {
+  const { id } = req.params;
+  const { platform, username } = req.body;
+
+  if (!platform || !username) {
+    return res.status(400).json({ error: 'Platform and username are required.' });
+  }
+
+  try {
+    const employee = await db.getEmployeeById(id);
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found.' });
+    }
+
+    let metrics;
+    if (platform === 'github') {
+      metrics = await fetchGitHubMetrics(username);
+      employee.github_username = username;
+    } else if (platform === 'gitlab') {
+      metrics = await fetchGitLabMetrics(username);
+      employee.gitlab_username = username;
+    } else {
+      return res.status(400).json({ error: 'Invalid platform. Supported: github, gitlab' });
+    }
+
+    // Map metrics to employee technical skills
+    employee.technicalSkills = mapGitMetricsToSkills(metrics, employee.technicalSkills);
+
+    // Save updated employee
+    const updated = await db.saveEmployee(employee);
+
+    // Fire-and-forget Audit log
+    logAudit({
+      actorId: id,
+      actorRole: 'employee',
+      action: 'connect_git',
+      targetType: 'employee',
+      targetId: id,
+      metadata: { platform, username, reposCount: Object.keys(metrics.languages).length }
+    });
+
+    res.status(200).json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Get organization repositories (with code-maat metrics)
+ */
+app.get('/api/git-org/repos', async (req, res) => {
+  try {
+    const repos = getOrgRepositories();
+    res.status(200).json(repos);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Analyze an organization repository using JS code-maat (cloned/simulated)
+ */
+app.post('/api/git-org/analyze', async (req, res) => {
+  const { repoPath, repoName, primarySkill } = req.body;
+
+  if (!repoName || !primarySkill) {
+    return res.status(400).json({ error: 'repoName and primarySkill are required.' });
+  }
+
+  try {
+    const pathToCheck = repoPath || '.';
+    const analysis = await analyzeRepository(pathToCheck, repoName, primarySkill);
+
+    // Fire-and-forget Audit log
+    logAudit({
+      actorId: 'admin',
+      actorRole: 'admin',
+      action: 'analyze_repo',
+      targetType: 'project',
+      targetId: repoName,
+      metadata: { repoPath: pathToCheck, repoName, primarySkill, truckFactor: analysis.truckFactor }
+    });
+
+    res.status(200).json(analysis);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
+// Graph API Routes
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/graph/spof
+ * SPOF Detection — Cypher-powered if Neo4j enabled, else in-memory fallback.
+ */
+app.get('/api/graph/spof', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const employees = await db.getEmployees();
+    const projects = await db.getProjects();
+    const threshold = parseInt(req.query.threshold as string) || 4;
+    const spofs = await findSPOFs(employees, projects, threshold);
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: (req as any).user?.role || (req.headers['x-mock-role'] as string),
+      action: 'view_spof_graph',
+      targetType: 'graph',
+      metadata: { threshold, isLive: isNeo4jEnabled() }
+    });
+    res.json({ spofs, isLive: isNeo4jEnabled() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/graph/talent-network
+ * Full graph data for visualization — employees, skills, projects, relationships.
+ */
+app.get('/api/graph/talent-network', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const employees = await db.getEmployees();
+    const projects = await db.getProjects();
+    const dept = req.query.department as string | undefined;
+    const minProf = parseInt(req.query.minProficiency as string) || 1;
+    const graph = await getTalentNetworkGraph(employees, projects, { department: dept, minProficiency: minProf });
+    res.json(graph);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/graph/path-to-coverage
+ * Find the shortest upskill path from a skill gap to an internal candidate.
+ */
+app.post('/api/graph/path-to-coverage', requireRole('admin', 'manager'), async (req, res) => {
+  try {
+    const { skillName } = req.body;
+    if (!skillName) return res.status(400).json({ error: 'skillName is required' });
+    const employees = await db.getEmployees();
+    const projects = await db.getProjects();
+    const paths = await findPathToCoverage(skillName, employees, projects);
+    res.json({ paths, isLive: isNeo4jEnabled() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/graph/sync
+ * Admin-triggered manual resync from Postgres → Neo4j.
+ */
+app.post('/api/graph/sync', requireRole('admin'), async (req, res) => {
+  try {
+    if (!isNeo4jEnabled()) {
+      return res.json({ message: 'Neo4j not configured — using in-memory graph fallback. Add NEO4J_* env vars to enable.' });
+    }
+    const employees = await db.getEmployees();
+    const projects = await db.getProjects();
+    await syncAllToGraph(employees, projects);
+    logAudit({
+      actorId: (req as any).user?.id || (req.headers['x-mock-user-id'] as string),
+      actorRole: 'admin',
+      action: 'manual_graph_sync',
+      targetType: 'graph',
+      metadata: { employeeCount: employees.length, projectCount: projects.length }
+    });
+    res.json({ message: `Synced ${employees.length} employees and ${projects.length} projects to Neo4j.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Start listening if not running on Vercel
 if (process.env.VERCEL !== '1') {
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`🚀 Workforce Intelligence Platform Server running on http://localhost:${PORT}`);
+    initScheduler();
+    // Initialize Neo4j and do initial graph sync
+    initNeo4j();
+    if (isNeo4jEnabled()) {
+      try {
+        const employees = await db.getEmployees();
+        const projects = await db.getProjects();
+        await syncAllToGraph(employees, projects);
+      } catch (err: any) {
+        console.error('[GraphSync] Initial sync failed:', err.message);
+      }
+    }
   });
+} else {
+  initScheduler();
+  initNeo4j();
 }
 
 export default app;

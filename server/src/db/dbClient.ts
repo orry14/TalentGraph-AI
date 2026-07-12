@@ -24,6 +24,28 @@ import {
 } from './seedData.js';
 import type { HiringDrive, RecruitmentCandidate } from '../services/recruitmentService.js';
 
+export interface AuditLog {
+  id?: string;
+  actor_user_id: string;
+  actor_role: string;
+  action: string;
+  target_type: string;
+  target_id?: string;
+  metadata?: any;
+  created_at?: string;
+}
+
+export interface ScheduledReport {
+  id?: string;
+  user_id: string;
+  report_type: string;
+  filters: any;
+  frequency: 'weekly' | 'monthly';
+  recipient_emails: string[];
+  next_run_at: string;
+  created_at?: string;
+}
+
 // Setup __dirname equivalent in ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +68,8 @@ interface Schema {
   projectRisks: ProjectRisk[];
   hiringDrives: HiringDrive[];
   recruitmentCandidates: RecruitmentCandidate[];
+  auditLogs: AuditLog[];
+  scheduledReports: ScheduledReport[];
 }
 
 class DatabaseAdapter {
@@ -95,6 +119,8 @@ class DatabaseAdapter {
           if (!this.localData.projectRisks) this.localData.projectRisks = [...seedProjectRisks];
           if (!this.localData.hiringDrives) this.localData.hiringDrives = [];
           if (!this.localData.recruitmentCandidates) this.localData.recruitmentCandidates = [];
+          if (!this.localData.auditLogs) this.localData.auditLogs = [];
+          if (!this.localData.scheduledReports) this.localData.scheduledReports = [];
           this.saveLocalDB();
         }
         console.log('✅ Loaded data from local JSON database.');
@@ -116,7 +142,9 @@ class DatabaseAdapter {
         projectActivities: [...seedProjectActivities],
         projectRisks: [...seedProjectRisks],
         hiringDrives: [],
-        recruitmentCandidates: []
+        recruitmentCandidates: [],
+        auditLogs: [],
+        scheduledReports: []
       };
     }
   }
@@ -135,7 +163,9 @@ class DatabaseAdapter {
       projectActivities: JSON.parse(JSON.stringify(seedProjectActivities)),
       projectRisks: JSON.parse(JSON.stringify(seedProjectRisks)),
       hiringDrives: [],
-      recruitmentCandidates: []
+      recruitmentCandidates: [],
+      auditLogs: [],
+      scheduledReports: []
     };
     this.saveLocalDB();
     console.log('✅ Local database reset to initial seed data.');
@@ -192,7 +222,9 @@ class DatabaseAdapter {
       projectActivities: JSON.parse(JSON.stringify(seedProjectActivities)),
       projectRisks: JSON.parse(JSON.stringify(seedProjectRisks)),
       hiringDrives: [],
-      recruitmentCandidates: []
+      recruitmentCandidates: [],
+      auditLogs: [],
+      scheduledReports: []
     };
     this.saveLocalDB();
     console.log('✅ Local database reset to initial seed data.');
@@ -209,6 +241,117 @@ class DatabaseAdapter {
   }
 
   // --- API Methods ---
+
+  public async getScheduledReports(userId?: string): Promise<ScheduledReport[]> {
+    if (this.isSupabaseEnabled && this.supabaseClient) {
+      let query = this.supabaseClient.from('scheduled_reports').select('*');
+      if (userId) query = query.eq('user_id', userId);
+      const { data, error } = await query;
+      if (!error && data) return data as ScheduledReport[];
+      console.warn('Fallback to local: Supabase error fetching scheduled reports:', error);
+    }
+    const reports = this.localData?.scheduledReports || [];
+    return userId ? reports.filter(r => r.user_id === userId) : reports;
+  }
+
+  public async saveScheduledReport(report: ScheduledReport): Promise<ScheduledReport> {
+    const newReport = {
+      ...report,
+      id: report.id || crypto.randomUUID(),
+      created_at: report.created_at || new Date().toISOString()
+    };
+
+    if (this.isSupabaseEnabled && this.supabaseClient) {
+      const { data, error } = await this.supabaseClient
+        .from('scheduled_reports')
+        .upsert(newReport)
+        .select()
+        .single();
+      if (!error && data) return data as ScheduledReport;
+      console.warn('Fallback to local: Supabase error saving scheduled report:', error);
+    }
+
+    if (this.localData) {
+      const idx = this.localData.scheduledReports.findIndex(r => r.id === newReport.id);
+      if (idx >= 0) this.localData.scheduledReports[idx] = newReport;
+      else this.localData.scheduledReports.push(newReport);
+      this.saveLocalDB();
+    }
+    return newReport;
+  }
+
+  public async deleteScheduledReport(id: string): Promise<boolean> {
+    if (this.isSupabaseEnabled && this.supabaseClient) {
+      const { error } = await this.supabaseClient.from('scheduled_reports').delete().eq('id', id);
+      if (!error) return true;
+      console.warn('Fallback to local: Supabase error deleting scheduled report:', error);
+    }
+    if (this.localData) {
+      const originalLen = this.localData.scheduledReports.length;
+      this.localData.scheduledReports = this.localData.scheduledReports.filter(r => r.id !== id);
+      if (this.localData.scheduledReports.length < originalLen) {
+        this.saveLocalDB();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public async getAuditLogs(filters?: { dateRange?: [string, string], actor?: string, action?: string, target?: string }): Promise<AuditLog[]> {
+    if (this.isSupabaseEnabled && this.supabaseClient) {
+      let query = this.supabaseClient.from('audit_logs').select('*');
+      
+      if (filters?.dateRange) {
+        query = query.gte('created_at', filters.dateRange[0]).lte('created_at', filters.dateRange[1]);
+      }
+      if (filters?.actor) query = query.ilike('actor_user_id', `%${filters.actor}%`);
+      if (filters?.action) query = query.eq('action', filters.action);
+      if (filters?.target) query = query.eq('target_type', filters.target);
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (!error && data) return data as AuditLog[];
+      console.warn('Fallback to local: Supabase error fetching audit logs:', error);
+    }
+    
+    let logs = this.localData?.auditLogs || [];
+    if (filters) {
+      if (filters.dateRange) {
+        const start = new Date(filters.dateRange[0]).getTime();
+        const end = new Date(filters.dateRange[1]).getTime();
+        logs = logs.filter(l => {
+          const t = new Date(l.created_at || '').getTime();
+          return t >= start && t <= end;
+        });
+      }
+      if (filters.actor) logs = logs.filter(l => l.actor_user_id.toLowerCase().includes(filters.actor!.toLowerCase()));
+      if (filters.action) logs = logs.filter(l => l.action === filters.action);
+      if (filters.target) logs = logs.filter(l => l.target_type === filters.target);
+    }
+    // Return sorted newest first
+    return logs.sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime());
+  }
+
+  public async saveAuditLog(log: AuditLog): Promise<void> {
+    const newLog = { 
+      ...log, 
+      id: log.id || crypto.randomUUID(),
+      created_at: log.created_at || new Date().toISOString()
+    };
+
+    if (this.isSupabaseEnabled && this.supabaseClient) {
+      const { error } = await this.supabaseClient.from('audit_logs').insert([newLog]);
+      if (error) console.warn('Supabase error saving audit log:', error);
+    }
+
+    if (this.localData) {
+      this.localData.auditLogs.unshift(newLog); // push to front for newest first
+      // Keep only last 1000 logs in memory for performance
+      if (this.localData.auditLogs.length > 1000) {
+        this.localData.auditLogs.pop();
+      }
+      this.saveLocalDB();
+    }
+  }
 
   public async getEmployees(): Promise<Employee[]> {
     if (this.isSupabaseEnabled && this.supabaseClient) {

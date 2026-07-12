@@ -20,6 +20,7 @@ export interface SimulationResult {
   }[];
   deltaCapability: number;
   missingSkills: string[];
+  financialImpact?: string;
 }
 
 class SimulationEngine {
@@ -114,6 +115,30 @@ class SimulationEngine {
       });
     }
 
+    // 8. Calculate Financial Impact
+    let financialImpact = '';
+    if (action === 'departure') {
+      const lostBilling = targetEmployee.billing_rate || 0;
+      const savedCost = targetEmployee.cost_rate || 0;
+      const backfillCost = savedCost * 1.5; // Estimated 1.5x to hire and train external replacement
+      
+      let successorSavings = 0;
+      if (successors.length > 0) {
+        const topSuccessor = successors[0].employee;
+        const alloc = topSuccessor.allocationPercentage !== undefined ? topSuccessor.allocationPercentage : (topSuccessor.currentProjects.length > 0 ? 100 : 0);
+        if (alloc === 0) {
+          successorSavings = topSuccessor.cost_rate || 0;
+        }
+      }
+      
+      const netDelta = successorSavings - lostBilling - (backfillCost - savedCost);
+      const sign = netDelta >= 0 ? '+' : '';
+      financialImpact = `Loss of ₹${lostBilling.toLocaleString()}/mo billing. Est backfill cost: ₹${backfillCost.toLocaleString()}/mo. Net delta (incl successor bench savings): ${sign}₹${netDelta.toLocaleString()}/mo.`;
+    } else if (action === 'promotion') {
+       const raise = (targetEmployee.cost_rate || 0) * 0.2;
+       financialImpact = `Est. Promotion cost increase: -₹${raise.toLocaleString()}/mo.`;
+    }
+
     return {
       action,
       targetEmployeeId,
@@ -128,7 +153,8 @@ class SimulationEngine {
       impactedProjects,
       recommendedSuccessors: successors,
       deltaCapability: afterStats.capabilityScore - beforeStats.capabilityScore,
-      missingSkills
+      missingSkills,
+      financialImpact
     };
   }
 }

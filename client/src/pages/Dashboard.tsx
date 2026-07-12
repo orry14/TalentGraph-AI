@@ -76,6 +76,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, setActiveTab }) => 
     return null;
   };
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await api.exportReport('dashboard', {}, format);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed');
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Search Header / Executive Assist */}
@@ -89,6 +98,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, setActiveTab }) => 
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => handleExport('csv')}
+              className="px-3 py-2 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-850 rounded-xl text-xs font-bold transition-all"
+            >
+              Export CSV
+            </button>
+            <button
+              onClick={() => handleExport('pdf')}
+              className="px-3 py-2 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-850 rounded-xl text-xs font-bold transition-all"
+            >
+              Export PDF
+            </button>
+          </div>
+
           <div className="relative flex-1 md:w-80">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
             <input
@@ -154,6 +178,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, setActiveTab }) => 
           </div>
         </GlassCard>
       </div>
+
+      {/* Financial Intelligence Row */}
+      {predictiveReport?.benchCostIntelligence && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <GlassCard className="flex flex-col justify-between col-span-1 md:col-span-1 border-emerald-500/30 bg-emerald-950/10">
+            <div>
+              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5"><TrendingUp className="w-4 h-4" /> Current Bench Cost</p>
+              <h3 className="font-outfit font-extrabold text-4xl text-emerald-100 mt-2">
+                ₹{predictiveReport.benchCostIntelligence.currentBenchCost.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[10px] text-slate-400 mt-2">Monthly idle cost (Total cost rates of unallocated capacity)</p>
+            </div>
+            <div className="mt-6">
+              <h5 className="text-xs font-bold text-slate-300 mb-2 border-b border-emerald-500/20 pb-1">Cost by Department</h5>
+              <div className="space-y-2.5 mt-3">
+                {predictiveReport.benchCostIntelligence.costByDepartment.map((dept: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400">{dept.department}</span>
+                    <span className="text-slate-200 font-bold">₹{dept.cost.toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="col-span-1 md:col-span-2 flex flex-col justify-between">
+            <div>
+              <h4 className="font-outfit font-bold text-sm text-slate-200 mb-1 flex items-center gap-1.5">
+                <Activity className="w-4.5 h-4.5 text-emerald-400" />
+                Bench Cost Trend (6mo Forecast)
+              </h4>
+              <p className="text-[10px] text-slate-500">Predicted financial impact of unallocated resources based on current project end dates.</p>
+            </div>
+            <div className="h-48 w-full mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={predictiveReport.benchCostIntelligence.benchCostTrend} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <XAxis dataKey="period" stroke="#475569" tick={{ fontSize: 9 }} />
+                  <YAxis stroke="#475569" tick={{ fontSize: 9 }} tickFormatter={(val) => `₹${(val/1000)}k`} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="value" name="Projected Cost (₹)" stroke="#10b981" fill="rgba(16, 185, 129, 0.15)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="upperConfidence" stroke="transparent" fill="rgba(16, 185, 129, 0.05)" />
+                  <Area type="monotone" dataKey="lowerConfidence" stroke="transparent" fill="rgba(16, 185, 129, 0.05)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
       {/* Row 2: Attrition Forecast & Skill Decay Area Charts */}
       {predictiveReport && (

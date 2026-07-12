@@ -42,6 +42,20 @@ export const Staffing: React.FC = () => {
   const [recommendation, setRecommendation] = useState<any | null>(null);
   const [showConflicts, setShowConflicts] = useState(false);
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await api.exportReport('staffing', {
+        projectName,
+        requiredSkills: requiredSkillsInput.split(',').map(s => s.trim()).filter(Boolean),
+        teamSize,
+        durationMonths
+      }, format);
+    } catch (err) {
+      console.error(err);
+      alert('Export failed');
+    }
+  };
+
   // Common tags
   const skillTags = ['React', 'TypeScript', 'Node.js', 'Python', 'AWS', 'Docker', 'Kubernetes', 'Terraform', 'SQL', 'LLMs', 'Figma', 'UX/UI Design', 'Next.js', 'Redis', 'GraphQL'];
 
@@ -277,10 +291,36 @@ export const Staffing: React.FC = () => {
                   <h4 className="font-outfit font-extrabold text-sm text-slate-200">Mathematical Optimization Score</h4>
                   <p className="text-[10px] text-slate-400 mt-0.5">Aggregate linear constraint matching score across all weights</p>
                 </div>
+                {recommendation.projectedMargin !== undefined && (
+                  <div className="ml-6 border-l border-slate-700/50 pl-6 hidden sm:block">
+                    <h4 className="font-outfit font-bold text-xs text-slate-400 flex items-center gap-1">
+                      <TrendingUp className="w-3.5 h-3.5" /> Projected Margin
+                    </h4>
+                    <p className={`font-bold text-lg mt-0.5 ${recommendation.projectedMargin >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {recommendation.projectedMargin >= 0 ? '+' : ''}₹{recommendation.projectedMargin.toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                )}
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-slate-500 uppercase block">Selected Target</span>
-                <span className="text-xs font-bold text-slate-200 mt-1 block">{recommendation.projectName}</span>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="px-2 py-1.5 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-[10px] font-bold transition-all"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="px-2 py-1.5 bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-[10px] font-bold transition-all"
+                  >
+                    PDF
+                  </button>
+                </div>
+                <div className="text-right border-l border-slate-800/80 pl-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Selected Target</span>
+                  <span className="text-xs font-bold text-slate-200 mt-1 block">{recommendation.projectName}</span>
+                </div>
               </div>
             </GlassCard>
 
