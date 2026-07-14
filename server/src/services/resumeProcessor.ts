@@ -1,6 +1,4 @@
 import * as zlib from 'zlib';
-// @ts-ignore
-const pdf = async (buf) => ({ text: 'Mock pdf text' });
 import type { Employee } from '../db/seedData.js';
 
 export interface ParsedResumeProfile {
@@ -255,6 +253,13 @@ export function extractZipResumeFiles(file: ResumeFileLike): ResumeFileLike[] {
 export async function extractResumeText(file: ResumeFileLike): Promise<string> {
   const lower = file.originalname.toLowerCase();
   if (file.mimetype === 'application/pdf' || lower.endsWith('.pdf')) {
+    let pdf: any;
+    try {
+      const mod = await import('pdf-parse');
+      pdf = mod.default || mod;
+    } catch (e) {
+      pdf = async () => ({ text: 'PDF parsing is disabled because pdf-parse module is unavailable.' });
+    }
     const parsed = await pdf(file.buffer);
     return cleanText(parsed.text || '');
   }
