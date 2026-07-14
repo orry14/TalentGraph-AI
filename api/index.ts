@@ -1,3 +1,1 @@
-import app from '../server/src/server';
-
-export default app;
+﻿export default async function handler(req, res) { try { const app = (await import('../server/src/server')).default; return app(req, res); } catch (error) { res.status(500).json({ error: 'VERCEL_CRASH', message: error.message, stack: error.stack }); } }
